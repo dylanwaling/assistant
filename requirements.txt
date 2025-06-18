@@ -1,0 +1,6 @@
+watchdog
+chroma
+openai
+typer
+rich
+requests
