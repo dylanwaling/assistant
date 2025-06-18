@@ -1,20 +1,22 @@
 ﻿import requests
+import json
 from memory_engine import log_event
 
 def summarize_file(path):
+    print(f"📄 Attempting to summarize: {path}")
+
     try:
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
     except PermissionError:
-        print(f"❌ Skipped locked file: {path}")
+        print(f"❌ Cannot access file (locked): {path}")
         return
 
     if not content.strip():
         print(f"⚠️ Skipping empty file: {path}")
         return
 
-    print(f"📄 Summarizing file: {path}")
-    prompt = f"Summarize the following:\n\n{content}"
+    prompt = f"Summarize this:\n\n{content}"
 
     try:
         response = requests.post(
@@ -23,13 +25,23 @@ def summarize_file(path):
             stream=True
         )
     except requests.exceptions.ConnectionError:
-        print("❌ Could not connect to Ollama. Is it running?")
+        print("❌ Ollama is not running. Start it with: ollama run llama3")
         return
 
     summary = ""
-    for chunk in response.iter_lines():
-        if chunk:
-            summary += chunk.decode("utf-8")
+    try:
+        for chunk in response.iter_lines():
+            if chunk:
+                data = json.loads(chunk.decode("utf-8"))
+                if "response" in data:
+                    summary += data["response"]
+    except Exception as e:
+        print(f"⚠️ Failed to parse response: {e}")
+        return
 
-    log_event(summary, path)
-    print("✅ Summary logged.")
+    summary = summary.strip()
+    if summary:
+        log_event(summary, path)
+        print(f"✅ Summary complete: {summary[:80]}...")
+    else:
+        print("⚠️ LLM returned empty summary.")

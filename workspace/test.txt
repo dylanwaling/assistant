@@ -1,0 +1,7 @@
+On June 17th, the operations and marketing teams convened to review the status of the Q3 strategic initiatives. The session began with an update from the ops lead, who confirmed that vendor negotiations for the new logistics software were complete, and that deployment would begin in early July. Training documentation is scheduled to be finalized by the end of this week, with internal rollout to follow in the third week of July.
+
+Marketing then presented a revised campaign calendar based on recent analytics. They plan to shift more budget toward high-performing lead generation channels—particularly LinkedIn and targeted Google Ads—while pulling back on underperforming podcast sponsorships. A/B testing for new landing page copy will begin June 24th, with a preliminary readout expected by the end of that week.
+
+The executive team emphasized the importance of aligning content and product launch messaging with the adjusted timeline. Product is currently 2 weeks behind schedule due to integration issues with the reporting dashboard, but engineering committed to resolving those blockers within 10 business days.
+
+The meeting concluded with a reiteration of core priorities for the quarter: improving conversion rates tightening sales feedback loops, and launching the new onboarding experience no later than August 15th. Each department is responsible for delivering weekly status updates on Monday mornings via the shared reporting dashb
