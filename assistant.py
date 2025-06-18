@@ -1,19 +1,29 @@
-from watchdog.observers import Observer
+﻿from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from summarizer import summarize_file
 import time
+import os
 
 class FileChangeHandler(FileSystemEventHandler):
+    def dispatch(self, event):
+        print(f"📌 Event triggered: {event}")
+        super().dispatch(event)
+
     def on_modified(self, event):
         if not event.is_directory:
+            print(f"🔄 Detected change in: {event.src_path}")
+            from summarizer import summarize_file
             summarize_file(event.src_path)
 
 def start_file_watcher():
     path = "./workspace"
+    if not os.path.exists(path):
+        os.makedirs(path)
+
     observer = Observer()
     observer.schedule(FileChangeHandler(), path=path, recursive=True)
     observer.start()
-    print("Watching workspace/ for changes...")
+    print("✅ Watching workspace/ for changes...")
+
     try:
         while True:
             time.sleep(1)

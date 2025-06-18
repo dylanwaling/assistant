@@ -1,4 +1,4 @@
-import json
+﻿import json
 from datetime import datetime, timedelta
 import os
 
@@ -18,8 +18,9 @@ def generate_digest(days=1):
         print("No recent entries.")
         return
 
+    os.makedirs("outputs", exist_ok=True)
     digest = "\n\n".join([f"[{e['timestamp']}] {e['summary']}" for e in recent])
     with open("outputs/digest.txt", "w") as f:
         f.write(digest)
 
-    print("Digest written to outputs/digest.txt")
+    print("✅ Digest written to outputs/digest.txt")

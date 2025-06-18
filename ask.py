@@ -1,18 +1,24 @@
-import json
+﻿import json
 import requests
 
 def ask_question(question):
-    with open("memory/log.jsonl", "r") as f:
-        logs = f.readlines()[-20:]
+    try:
+        with open("memory/log.jsonl", "r") as f:
+            logs = f.readlines()[-20:]
+    except FileNotFoundError:
+        return "❌ No memory log found."
 
     context = "".join(logs)
-    prompt = f"Here is a memory log:\n{context}\n\nAnswer this question:\n{question}"
+    prompt = f"Based on the memory log below, answer this question:\n\n{context}\n\nQuestion: {question}"
 
-    response = requests.post(
-        "http://localhost:11434/api/generate",
-        json={"model": "llama3", "prompt": prompt},
-        stream=True
-    )
+    try:
+        response = requests.post(
+            "http://localhost:11434/api/generate",
+            json={"model": "llama3", "prompt": prompt},
+            stream=True
+        )
+    except requests.exceptions.ConnectionError:
+        return "❌ Could not connect to Ollama. Is it running?"
 
     answer = ""
     for chunk in response.iter_lines():
