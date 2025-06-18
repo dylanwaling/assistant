@@ -1,7 +1,7 @@
 import typer
 from assistant import start_file_watcher
-from digest import generate_digest
-from ask import ask_question
+from digest_engine import generate_digest
+from ask_engine import ask_question
 
 app = typer.Typer()
 

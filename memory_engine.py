@@ -1,12 +1,13 @@
 import os
 import json
 from datetime import datetime
+from config import MEMORY_DIR
 
-STATE_FILE = "memory/last_seen.json"
-LOG_FILE = "memory/log.jsonl"
+STATE_FILE = os.path.join(MEMORY_DIR, "last_seen.json")
+LOG_FILE = os.path.join(MEMORY_DIR, "log.jsonl")
 
 def log_event(summary, source_path, event_type="summary"):
-    os.makedirs("memory", exist_ok=True)
+    os.makedirs(MEMORY_DIR, exist_ok=True)
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
         "source": source_path,
@@ -23,6 +24,6 @@ def load_file_state():
     return {}
 
 def save_file_state(state):
-    os.makedirs("memory", exist_ok=True)
+    os.makedirs(MEMORY_DIR, exist_ok=True)
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)

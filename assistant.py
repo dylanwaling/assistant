@@ -4,8 +4,10 @@ import json
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from summarizer import summarize_file
+from config import WORKSPACE_DIR, MEMORY_DIR, IGNORED_EXTENSIONS
+from memory_engine import log_event
 
-STATE_FILE = "memory/last_seen.json"
+STATE_FILE = os.path.join(MEMORY_DIR, "last_seen.json")
 
 # Load previously tracked file modification times
 def load_file_state():
@@ -16,40 +18,40 @@ def load_file_state():
 
 # Save updated state after summarizing
 def save_file_state(state):
+    os.makedirs(MEMORY_DIR, exist_ok=True)
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
-# Sync all files in workspace that are new or modified since last seen
-def sync_workspace(path="./workspace"):
+# Scan entire workspace and sync any changes
+def sync_workspace(path=WORKSPACE_DIR):
     print("🔄 Syncing all modified files in workspace...")
     state = load_file_state()
-
-    # Step 1: Build a set of all current file paths
     existing_paths = set()
+
     for root, _, files in os.walk(path):
         for file in files:
+            if any(file.endswith(ext) for ext in IGNORED_EXTENSIONS):
+                continue
             full_path = os.path.join(root, file)
             rel_path = os.path.relpath(full_path, start=".").replace("\\", "/")
             existing_paths.add(rel_path)
 
-    # Step 2: Remove stale keys from state
-    stale_keys = [key for key in state if key not in existing_paths]
-    for key in stale_keys:
-        print(f"🗑️ Removing deleted file from state: {key}")
-        del state[key]
+    # Remove deleted files
+    for key in list(state.keys()):
+        if key not in existing_paths:
+            print(f"🗑️ Removing deleted file from state: {key}")
+            del state[key]
+            log_event("File was deleted", key, event_type="deleted")
 
-    # Step 3: Process current files
+    # Check all current files
     for rel_path in existing_paths:
         full_path = os.path.join(".", rel_path)
-
         try:
             current_mtime = round(os.path.getmtime(full_path), 6)
         except FileNotFoundError:
-            continue  # file was deleted between scan and access
+            continue  # file deleted mid-scan
 
         last_mtime = round(state.get(rel_path, 0), 6)
-
-        # Debug info
         print(f"⏱️  {rel_path} | last: {last_mtime}, current: {current_mtime}")
 
         if current_mtime > last_mtime:
@@ -62,45 +64,45 @@ def sync_workspace(path="./workspace"):
     save_file_state(state)
     print("✅ Sync complete.")
 
-# Watch for live file edits
+# FileSystem watcher class
 class FileChangeHandler(FileSystemEventHandler):
     def on_modified(self, event):
-        if not event.is_directory:
-            rel_path = os.path.relpath(event.src_path, start=".")
-            print(f"🔄 Detected change in: {rel_path}")
-            summarize_file(event.src_path)
+        if event.is_directory or event.src_path.endswith(tuple(IGNORED_EXTENSIONS)):
+            return
 
-            # Update state immediately
-            state = load_file_state()
-            try:
-                mtime = os.path.getmtime(event.src_path)
-                state[rel_path] = mtime
-                save_file_state(state)
-            except FileNotFoundError:
-                pass
+        rel_path = os.path.relpath(event.src_path, start=".").replace("\\", "/")
+        print(f"🔄 Detected change in: {rel_path}")
+        summarize_file(event.src_path)
+
+        state = load_file_state()
+        try:
+            mtime = os.path.getmtime(event.src_path)
+            state[rel_path] = mtime
+            save_file_state(state)
+        except FileNotFoundError:
+            pass
 
     def on_deleted(self, event):
-        if not event.is_directory:
-            rel_path = os.path.relpath(event.src_path, start=".")
-            print(f"❌ Detected deletion: {rel_path}")
+        if event.is_directory:
+            return
 
-            # Remove from state
-            state = load_file_state()
-            if rel_path in state:
-                del state[rel_path]
-                print(f"🗑️ Removed {rel_path} from last_seen.json")
-                save_file_state(state)
+        rel_path = os.path.relpath(event.src_path, start=".").replace("\\", "/")
+        print(f"❌ Detected deletion: {rel_path}")
 
-# Full watcher startup: sync first, then watch
+        state = load_file_state()
+        if rel_path in state:
+            del state[rel_path]
+            save_file_state(state)
+            print(f"🗑️ Removed {rel_path} from last_seen.json")
+            log_event("File was deleted", rel_path, event_type="deleted")
+
+# Main watcher loop
 def start_file_watcher():
-    path = "./workspace"
-    if not os.path.exists(path):
-        os.makedirs(path)
-
-    sync_workspace(path)
+    os.makedirs(WORKSPACE_DIR, exist_ok=True)
+    sync_workspace(WORKSPACE_DIR)
 
     observer = Observer()
-    observer.schedule(FileChangeHandler(), path=path, recursive=True)
+    observer.schedule(FileChangeHandler(), path=WORKSPACE_DIR, recursive=True)
     observer.start()
     print("✅ Watching workspace/ for changes...")
 

@@ -1,10 +1,13 @@
 ﻿import json
 import requests
+from config import OLLAMA_API, LLM_MODEL, MEMORY_DIR
 
 def ask_question(question):
+    log_path = f"{MEMORY_DIR}/log.jsonl"
+
     try:
-        with open("memory/log.jsonl", "r", encoding='utf-8') as f:
-            logs = f.readlines()[-20:]  # Last 20 log entries
+        with open(log_path, "r", encoding="utf-8") as f:
+            logs = f.readlines()[-20:]  # Use last 20 entries for context
     except FileNotFoundError:
         return "❌ No memory log found."
 
@@ -13,8 +16,8 @@ def ask_question(question):
 
     try:
         response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={"model": "tinyllama", "prompt": prompt},
+            OLLAMA_API,
+            json={"model": LLM_MODEL, "prompt": prompt},
             stream=True
         )
     except requests.exceptions.ConnectionError:

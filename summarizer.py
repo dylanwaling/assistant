@@ -1,6 +1,7 @@
 ﻿import requests
 import json
 from memory_engine import log_event
+from config import OLLAMA_API, LLM_MODEL
 
 def summarize_file(path):
     print(f"📄 Attempting to summarize: {path}")
@@ -20,12 +21,12 @@ def summarize_file(path):
 
     try:
         response = requests.post(
-            "http://localhost:11434/api/generate",
-            json={"model": "tinyllama", "prompt": prompt},
+            OLLAMA_API,
+            json={"model": LLM_MODEL, "prompt": prompt},
             stream=True
         )
     except requests.exceptions.ConnectionError:
-        print("❌ Ollama is not running. Start it with: ollama run llama3")
+        print("❌ Ollama is not running. Start it with: ollama run <model>")
         return
 
     summary = ""
