@@ -24,27 +24,40 @@ def sync_workspace(path="./workspace"):
     print("🔄 Syncing all modified files in workspace...")
     state = load_file_state()
 
+    # Step 1: Build a set of all current file paths
+    existing_paths = set()
     for root, _, files in os.walk(path):
         for file in files:
             full_path = os.path.join(root, file)
             rel_path = os.path.relpath(full_path, start=".").replace("\\", "/")
+            existing_paths.add(rel_path)
 
-            try:
-                current_mtime = round(os.path.getmtime(full_path), 6)
-            except FileNotFoundError:
-                continue
+    # Step 2: Remove stale keys from state
+    stale_keys = [key for key in state if key not in existing_paths]
+    for key in stale_keys:
+        print(f"🗑️ Removing deleted file from state: {key}")
+        del state[key]
 
-            last_mtime = round(state.get(rel_path, 0), 6)
+    # Step 3: Process current files
+    for rel_path in existing_paths:
+        full_path = os.path.join(".", rel_path)
 
-            # Debug info
-            print(f"⏱️  {rel_path} | last: {last_mtime}, current: {current_mtime}")
+        try:
+            current_mtime = round(os.path.getmtime(full_path), 6)
+        except FileNotFoundError:
+            continue  # file was deleted between scan and access
 
-            if current_mtime > last_mtime:
-                print(f"📄 Syncing updated file: {rel_path}")
-                summarize_file(full_path)
-                state[rel_path] = current_mtime
-            else:
-                print(f"✅ Skipping unchanged file: {rel_path}")
+        last_mtime = round(state.get(rel_path, 0), 6)
+
+        # Debug info
+        print(f"⏱️  {rel_path} | last: {last_mtime}, current: {current_mtime}")
+
+        if current_mtime > last_mtime:
+            print(f"📄 Syncing updated file: {rel_path}")
+            summarize_file(full_path)
+            state[rel_path] = current_mtime
+        else:
+            print(f"✅ Skipping unchanged file: {rel_path}")
 
     save_file_state(state)
     print("✅ Sync complete.")
@@ -56,6 +69,7 @@ class FileChangeHandler(FileSystemEventHandler):
             rel_path = os.path.relpath(event.src_path, start=".")
             print(f"🔄 Detected change in: {rel_path}")
             summarize_file(event.src_path)
+
             # Update state immediately
             state = load_file_state()
             try:
@@ -64,6 +78,18 @@ class FileChangeHandler(FileSystemEventHandler):
                 save_file_state(state)
             except FileNotFoundError:
                 pass
+
+    def on_deleted(self, event):
+        if not event.is_directory:
+            rel_path = os.path.relpath(event.src_path, start=".")
+            print(f"❌ Detected deletion: {rel_path}")
+
+            # Remove from state
+            state = load_file_state()
+            if rel_path in state:
+                del state[rel_path]
+                print(f"🗑️ Removed {rel_path} from last_seen.json")
+                save_file_state(state)
 
 # Full watcher startup: sync first, then watch
 def start_file_watcher():
