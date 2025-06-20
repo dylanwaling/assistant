@@ -1,4 +1,5 @@
 ﻿# core.py
+# Core logic for assistant: memory, embedding, summarization, file watching, and LLM interaction.
 
 import os
 import sys
@@ -10,15 +11,20 @@ import requests
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+# === Embedding ===
+# Provides vector embeddings for text using sentence-transformers.
 try:
     from sentence_transformers import SentenceTransformer
     _embed_model = SentenceTransformer("all-MiniLM-L6-v2")
     def embed(text: str) -> list[float]:
+        """Return a vector embedding for the given text."""
         return _embed_model.encode(text).tolist()
 except ImportError:
     def embed(text: str) -> list[float]:
         raise ImportError("sentence-transformers not installed")
 
+# === ChromaDB Memory Index ===
+# Handles persistent vector storage and retrieval.
 try:
     import chromadb
     _client = chromadb.PersistentClient(path="chromadb_store")
@@ -31,8 +37,8 @@ from config import (
     LLM_MODEL, OLLAMA_API, MAX_TOKENS, IGNORED_EXTENSIONS
 )
 
-# === ChromaDB Memory Index ===
 def add_memory(id: str, text: str, metadata: dict = {}):
+    """Add a memory entry to the ChromaDB vector store."""
     if collection is None:
         print("ChromaDB not available.")
         return
@@ -45,6 +51,7 @@ def add_memory(id: str, text: str, metadata: dict = {}):
     )
 
 def search_memory(query: str, top_k=5, where: dict = None):
+    """Search memory entries using a vector query and optional metadata filter."""
     if collection is None:
         print("ChromaDB not available.")
         return []
@@ -57,6 +64,7 @@ def search_memory(query: str, top_k=5, where: dict = None):
     return list(zip(results["documents"][0], results["metadatas"][0]))
 
 def list_all_memories():
+    """Print all memory entries in the database."""
     if collection is None:
         print("ChromaDB not available.")
         return
@@ -74,6 +82,7 @@ STATE_FILE = os.path.join(MEMORY_DIR, "last_seen.json")
 LOG_FILE = os.path.join(MEMORY_DIR, "log.jsonl")
 
 def log_event(summary, source_path, event_type="summary"):
+    """Log a memory event (summary, deletion, etc.) to disk."""
     os.makedirs(MEMORY_DIR, exist_ok=True)
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
@@ -83,22 +92,24 @@ def log_event(summary, source_path, event_type="summary"):
     }
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
-    # REMOVE or comment out this line:
-    # cleanup_chromadb()
+    # Optionally call cleanup_chromadb() here if needed.
 
 def load_file_state():
+    """Load the last seen file modification times from disk."""
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 def save_file_state(state):
+    """Save the last seen file modification times to disk."""
     os.makedirs(MEMORY_DIR, exist_ok=True)
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(state, f, indent=2)
 
 # === Summarization ===
 def summarize_file(path):
+    """Summarize the contents of a file using the LLM and log the summary."""
     print(f"📄 Attempting to summarize: {path}")
     try:
         with open(path, 'r', encoding='utf-8') as f:
@@ -138,6 +149,7 @@ def summarize_file(path):
 
 # === Digest ===
 def generate_digest(days=1):
+    """Generate a digest of recent memory entries and write to outputs/digest.txt."""
     log_path = os.path.join(MEMORY_DIR, "log.jsonl")
     if not os.path.exists(log_path):
         print("❌ No memory log found.")
@@ -158,6 +170,10 @@ def generate_digest(days=1):
 
 # === Ask Engine ===
 def ask_question(question):
+    """
+    Search memory for relevant entries and use the LLM to answer a question.
+    Returns the LLM's answer as a string.
+    """
     t0 = time.time()
     print("[🔍] Searching memory...", flush=True)
     matches = search_memory(
@@ -212,9 +228,14 @@ Question: {question}
 
 # === Workspace Watcher ===
 def is_valid_file_path(path):
+    """Check if a path is a valid file path for tracking."""
     return ("/" in path or "\\" in path) and not path.strip().lower().startswith("d:") and not path.strip().startswith("python ")
 
 def sync_workspace(path=WORKSPACE_DIR):
+    """
+    Scan the workspace directory, summarize changed files, and update memory state.
+    Also logs deletions.
+    """
     print("🔄 Syncing all modified files in workspace...")
     state = load_file_state()
     existing_paths = set()
@@ -249,6 +270,7 @@ def sync_workspace(path=WORKSPACE_DIR):
     print("✅ Sync complete.")
 
 class FileChangeHandler(FileSystemEventHandler):
+    """Handles file system events for the workspace watcher."""
     def on_modified(self, event):
         if event.is_directory or event.src_path.endswith(tuple(IGNORED_EXTENSIONS)):
             return
@@ -276,6 +298,7 @@ class FileChangeHandler(FileSystemEventHandler):
             log_event("File was deleted", rel_path, event_type="deleted")
 
 def start_file_watcher():
+    """Start the workspace file watcher and sync on startup."""
     os.makedirs(WORKSPACE_DIR, exist_ok=True)
     sync_workspace(WORKSPACE_DIR)
     observer = Observer()
@@ -291,6 +314,7 @@ def start_file_watcher():
 
 # === ChromaDB Cleanup ===
 def cleanup_chromadb(db_path="./chromadb"):
+    """Delete the ChromaDB directory for a clean state."""
     if os.path.exists(db_path):
         import shutil
         shutil.rmtree(db_path)
