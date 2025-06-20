@@ -50,7 +50,7 @@ def add_memory(id: str, text: str, metadata: dict = {}):
         metadatas=[metadata]
     )
 
-def search_memory(query: str, top_k=5, where: dict = None):
+def search_memory(query: str, top_k=10, where: dict = None):
     """Search memory entries using a vector query and optional metadata filter."""
     if collection is None:
         print("ChromaDB not available.")
@@ -82,8 +82,14 @@ STATE_FILE = os.path.join(MEMORY_DIR, "last_seen.json")
 LOG_FILE = os.path.join(MEMORY_DIR, "log.jsonl")
 
 def log_event(summary, source_path, event_type="summary"):
-    """Log a memory event (summary, deletion, etc.) to disk."""
+    """
+    Log a memory event (summary, deletion, etc.) to disk and ChromaDB.
+    Standardizes event_type to "deletion" for deletions.
+    """
     os.makedirs(MEMORY_DIR, exist_ok=True)
+    # Standardize event_type for deletions
+    if event_type.lower() in ("deleted", "deletion"):
+        event_type = "deletion"
     entry = {
         "timestamp": datetime.utcnow().isoformat(),
         "source": source_path,
@@ -92,7 +98,14 @@ def log_event(summary, source_path, event_type="summary"):
     }
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
-    # Optionally call cleanup_chromadb() here if needed.
+    # Always add to ChromaDB
+    if collection is not None:
+        event_id = f"{entry['timestamp']}_{entry['source']}"
+        add_memory(event_id, summary, metadata={
+            "type": event_type,
+            "timestamp": entry["timestamp"],
+            "source": source_path
+        })
 
 def load_file_state():
     """Load the last seen file modification times from disk."""
@@ -182,21 +195,31 @@ def ask_question(question):
         where={"type": "deletion"}
     )
     t1 = time.time()
-    print("\n[🗂️] Retrieved memory entries for LLM context:", flush=True)
+    if not matches:
+        print("[🗂️] No relevant memory entries found.")
+        return "❌ No relevant memory entries found."
+
+    print("\n[🗂️] Retrieved memory entries for LLM context:")
     for i, (summary, meta) in enumerate(matches, 1):
         print(f"{i}. [{meta.get('timestamp', meta.get('date', 'unknown'))}] ({meta.get('source', 'unknown')})\n   {summary}", flush=True)
-    if not matches:
-        return "❌ No relevant memory entries found."
+
     context = "\n\n".join(
-        f"[{meta.get('timestamp', meta.get('date', 'unknown'))}] ({meta.get('source', 'unknown')})\n{summary}" 
-        for summary, meta in matches
+        f"{i+1}. [{meta.get('timestamp', meta.get('date', 'unknown'))}] ({meta.get('source', 'unknown')})\n{summary}"
+        for i, (summary, meta) in enumerate(matches)
     )
-    prompt = f"""Based on the following memory log entries, answer the question:
 
-{context}
+    # Universal, explicit prompt
+    prompt = (
+    "You are an AI assistant. Below are memory log entries (context). "
+    "Answer the user's question using ONLY the information in the context. "
+    "Do not invent or assume any details that are not explicitly present. "
+    "Do not reference external sources or users unless they are in the context. "
+    "Do not skip any entry. Reference each entry as needed.\n\n"
+    f"{context}\n\n"
+    f"User's question: {question}\n"
+    "Your answer (be thorough and reference all entries above):"
+)
 
-Question: {question}
-"""
     print(f"[🤖] Querying LLM ({LLM_MODEL})...", flush=True)
     try:
         response = requests.post(
@@ -250,7 +273,7 @@ def sync_workspace(path=WORKSPACE_DIR):
         if key not in existing_paths:
             print(f"🗑️ Removing deleted file from state: {key}")
             del state[key]
-            log_event("File was deleted", key, event_type="deleted")
+            log_event("File was deleted", key, event_type="deletion")
     for rel_path in existing_paths:
         full_path = os.path.join(".", rel_path)
         try:
@@ -295,7 +318,7 @@ class FileChangeHandler(FileSystemEventHandler):
             del state[rel_path]
             save_file_state(state)
             print(f"🗑️ Removed {rel_path} from last_seen.json")
-            log_event("File was deleted", rel_path, event_type="deleted")
+            log_event("File was deleted", rel_path, event_type="deletion")
 
 def start_file_watcher():
     """Start the workspace file watcher and sync on startup."""
@@ -313,7 +336,7 @@ def start_file_watcher():
     observer.join()
 
 # === ChromaDB Cleanup ===
-def cleanup_chromadb(db_path="./chromadb"):
+def cleanup_chromadb(db_path="chromadb_store"):
     """Delete the ChromaDB directory for a clean state."""
     if os.path.exists(db_path):
         import shutil

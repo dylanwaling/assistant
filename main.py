@@ -45,10 +45,7 @@ def ask(question: str):
 
 @app.command()
 def cleanupdb():
-    """
-    Cleanup the ChromaDB directory.
-    This removes the persistent vector database for a fresh state.
-    """
+    """Cleanup ChromaDB."""
     cleanup_chromadb()
 
 if __name__ == "__main__":
