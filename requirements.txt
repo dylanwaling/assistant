@@ -1,6 +1,7 @@
 watchdog
-chroma
+chromadb
 openai
 typer
 rich
 requests
+sentence-transformers

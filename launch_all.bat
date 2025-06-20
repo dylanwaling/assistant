@@ -1,9 +1,9 @@
 @echo off
-:: Change to the project directory
+REM Change to the project directory
 cd /d "D:\Documents D\assistant"
 
-:: Launch watcher in its own terminal window
-start "AI Chief Watcher" cmd /k "python cli.py watch"
+REM Launch main.py in watch mode in a new terminal window
+start "AI Chief Watcher" cmd /k "python main.py watch"
 
-:: Launch second terminal window for user input
+REM Open a second prompt in the project directory
 start "AI Chief Command Prompt" cmd /k "cd /d D:\Documents D\assistant"

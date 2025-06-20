@@ -1,8 +1,10 @@
-﻿import typer
+﻿# main.py
+
+import typer
 import time
-from assistant import start_file_watcher
-from digest_engine import generate_digest
-from ask_engine import ask_question
+from core import (
+    start_file_watcher, generate_digest, ask_question, cleanup_chromadb
+)
 
 app = typer.Typer()
 
@@ -25,6 +27,11 @@ def ask(question: str):
     elapsed = time.time() - start_time
     print(f"\n[✅] Done in {elapsed:.2f} seconds.")
     print(answer)
+
+@app.command()
+def cleanupdb():
+    """Cleanup ChromaDB."""
+    cleanup_chromadb()
 
 if __name__ == "__main__":
     app()
