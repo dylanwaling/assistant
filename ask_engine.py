@@ -8,8 +8,16 @@ from memory_index import search_memory
 def ask_question(question):
     t0 = time.time()
     print("[🔍] Searching memory...", flush=True)
-    matches = search_memory(question, top_k=10)
+    matches = search_memory(
+        question,
+        top_k=10,
+        where={"type": "deletion"}
+    )
     t1 = time.time()
+
+    print("\n[🗂️] Retrieved memory entries for LLM context:", flush=True)
+    for i, (summary, meta) in enumerate(matches, 1):
+        print(f"{i}. [{meta.get('timestamp', meta.get('date', 'unknown'))}] ({meta.get('source', 'unknown')})\n   {summary}", flush=True)
 
     if not matches:
         return "❌ No relevant memory entries found."

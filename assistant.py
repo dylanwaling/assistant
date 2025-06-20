@@ -9,6 +9,10 @@ from memory_engine import log_event
 
 STATE_FILE = os.path.join(MEMORY_DIR, "last_seen.json")
 
+def is_valid_file_path(path):
+    # Accepts paths with slashes, not starting with a command or drive prompt
+    return ("/" in path or "\\" in path) and not path.strip().lower().startswith("d:") and not path.strip().startswith("python ")
+
 # Load previously tracked file modification times
 def load_file_state():
     if not os.path.exists(STATE_FILE):
@@ -19,8 +23,10 @@ def load_file_state():
 # Save updated state after summarizing
 def save_file_state(state):
     os.makedirs(MEMORY_DIR, exist_ok=True)
+    # Filter out any keys that are not valid file paths
+    filtered_state = {k: v for k, v in state.items() if is_valid_file_path(k)}
     with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2)
+        json.dump(filtered_state, f, indent=2)
 
 # Scan entire workspace and sync any changes
 def sync_workspace(path=WORKSPACE_DIR):
@@ -57,7 +63,8 @@ def sync_workspace(path=WORKSPACE_DIR):
         if current_mtime > last_mtime:
             print(f"📄 Syncing updated file: {rel_path}")
             summarize_file(full_path)
-            state[rel_path] = current_mtime
+            if is_valid_file_path(rel_path):
+                state[rel_path] = current_mtime
         else:
             print(f"✅ Skipping unchanged file: {rel_path}")
 
@@ -77,8 +84,9 @@ class FileChangeHandler(FileSystemEventHandler):
         state = load_file_state()
         try:
             mtime = os.path.getmtime(event.src_path)
-            state[rel_path] = mtime
-            save_file_state(state)
+            if is_valid_file_path(rel_path):
+                state[rel_path] = mtime
+                save_file_state(state)
         except FileNotFoundError:
             pass
 
