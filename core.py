@@ -62,11 +62,13 @@ def search_memory(query: str, top_k=10, where: dict = None):
         print("ChromaDB not available for assistant.")
         return []
     query_vector = embed(query)
-    results = collection.query(
-        query_embeddings=[query_vector],
-        n_results=top_k,
-        where=where or {}
-    )
+    query_args = {
+        "query_embeddings": [query_vector],
+        "n_results": top_k,
+    }
+    if where is not None:
+        query_args["where"] = where
+    results = collection.query(**query_args)
     return list(zip(results["documents"][0], results["metadatas"][0]))
 
 def list_all_memories():
@@ -199,10 +201,18 @@ def ask_question(question):
     """
     t0 = time.time()
     print("[🔍] Assistant: Searching memory...", flush=True)
+
+    # Simple keyword check for deletion-related questions
+    deletion_keywords = ["delete", "deleted", "remov", "removed", "removal", "trash"]
+    if any(word in question.lower() for word in deletion_keywords):
+        where = {"type": "deletion"}
+    else:
+        where = None
+
     matches = search_memory(
         question,
         top_k=10,
-        where={"type": "deletion"}
+        where=where
     )
     t1 = time.time()
     if not matches:
@@ -249,7 +259,6 @@ def ask_question(question):
             data = json.loads(line.decode("utf-8"))
             if "response" in data:
                 chunk = data["response"]
-                print(chunk, end="", flush=True)
                 chunks.append(chunk)
         except Exception as e:
             print(f"\n⚠️ Assistant: Skipping invalid chunk: {e}", flush=True)
