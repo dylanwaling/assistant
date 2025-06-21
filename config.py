@@ -9,7 +9,7 @@ OUTPUT_DIR = "./outputs"       # Directory to store generated digests and output
 
 # === LLM (Language Model) Settings ===
 
-LLM_MODEL = "tinyllama"        # Name of the LLM model to use for summarization and Q&A
+LLM_MODEL = "llama3"        # Name of the LLM model to use for summarization and Q&A
 OLLAMA_API = "http://localhost:11434/api/generate"  # URL for the Ollama API endpoint
 MAX_TOKENS = 300               # Maximum number of tokens for LLM responses (summarization, etc.)
 

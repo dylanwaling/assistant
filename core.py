@@ -195,24 +195,14 @@ def generate_digest(days=1):
 
 # === Ask Engine ===
 def ask_question(question):
-    """
-    Search assistant memory for relevant entries and use the LLM to answer a question.
-    Returns the LLM's answer as a string.
-    """
     t0 = time.time()
     print("[🔍] Assistant: Searching memory...", flush=True)
 
-    # Simple keyword check for deletion-related questions
-    deletion_keywords = ["delete", "deleted", "remov", "removed", "removal", "trash"]
-    if any(word in question.lower() for word in deletion_keywords):
-        where = {"type": "deletion"}
-    else:
-        where = None
-
+    # No hardcoded where filter; let embedding search do the work
     matches = search_memory(
         question,
         top_k=10,
-        where=where
+        where=None
     )
     t1 = time.time()
     if not matches:
@@ -229,15 +219,19 @@ def ask_question(question):
     )
 
     prompt = (
-        "You are an AI assistant. Below are memory log entries (context). "
-        "Answer the user's question using ONLY the information in the context. "
-        "Do not invent or assume any details that are not explicitly present. "
-        "Do not reference external sources or users unless they are in the context. "
-        "Do not skip any entry. Reference each entry as needed.\n\n"
-        f"{context}\n\n"
-        f"User's question: {question}\n"
-        "Your answer (be thorough and reference all entries above):"
-    )
+    "You are an AI assistant. Below are memory log entries (context). "
+    "The entries may include deletions, summaries, reports, or other events. "
+    "For the user's question, use ONLY the entries that are relevant to the question. "
+    "If the user asks about deletions, only consider deletion-related entries. "
+    "If the user asks about financial documents, only consider entries about financial documents. "
+    "Ignore unrelated entries, even if they are present in the context. "
+    "Do not invent or assume any details that are not explicitly present. "
+    "Do not reference external sources or users unless they are in the context. "
+    "Reference each relevant entry as needed.\n\n"
+    f"{context}\n\n"
+    f"User's question: {question}\n"
+    "Your answer (be thorough and reference only the relevant entries above):"
+)
 
     print(f"[🤖] Assistant: Querying LLM ({LLM_MODEL})...", flush=True)
     try:
