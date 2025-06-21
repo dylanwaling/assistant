@@ -53,14 +53,10 @@ def cleanupdb():
 @app.command()
 def resyncdb():
     """
-    Fully resync ChromaDB from the log and restart the batch file.
+    Fully resync ChromaDB from the log.
     """
-    print("WARNING: This will close this terminal and restart the assistant after resync.")
-    # Launch the resync script in a new process and exit this one
-    subprocess.Popen([
-        sys.executable, "resync_chromadb.py"
-    ])
-    sys.exit(0)
+    from core import resync_chromadb_from_log
+    resync_chromadb_from_log()
 
 if __name__ == "__main__":
     app()

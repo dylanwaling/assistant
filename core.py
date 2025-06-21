@@ -31,7 +31,7 @@ def get_chromadb_collection():
     if _chromadb_collection is None:
         import chromadb
         _chromadb_client = chromadb.PersistentClient(path="chromadb_store")
-        _chromadb_collection = _chromadb_client.get_or_create_collection("memory")
+        _chromadb_collection = _chromadb_client.get_or_create_collection("assistant_memory")
     return _chromadb_collection
 
 from config import (
@@ -40,11 +40,11 @@ from config import (
 )
 
 def add_memory(id: str, text: str, metadata: dict = {}):
-    """Add a memory entry to the ChromaDB vector store."""
+    """Add a memory entry to the assistant's ChromaDB vector store."""
     try:
         collection = get_chromadb_collection()
     except ImportError:
-        print("ChromaDB not available.")
+        print("ChromaDB not available for assistant.")
         return
     embedding = embed(text)
     collection.add(
@@ -55,11 +55,11 @@ def add_memory(id: str, text: str, metadata: dict = {}):
     )
 
 def search_memory(query: str, top_k=10, where: dict = None):
-    """Search memory entries using a vector query and optional metadata filter."""
+    """Search assistant memory entries using a vector query and optional metadata filter."""
     try:
         collection = get_chromadb_collection()
     except ImportError:
-        print("ChromaDB not available.")
+        print("ChromaDB not available for assistant.")
         return []
     query_vector = embed(query)
     results = collection.query(
@@ -70,15 +70,15 @@ def search_memory(query: str, top_k=10, where: dict = None):
     return list(zip(results["documents"][0], results["metadatas"][0]))
 
 def list_all_memories():
-    """Print all memory entries in the database."""
+    """Print all assistant memory entries in the database."""
     try:
         collection = get_chromadb_collection()
     except ImportError:
-        print("ChromaDB not available.")
+        print("ChromaDB not available for assistant.")
         return
     results = collection.get()
     if not results["documents"]:
-        print("🧠 No memory entries found in the database.")
+        print("🧠 No memory entries found in the assistant database.")
         return
     for i, (doc, meta) in enumerate(zip(results["documents"], results["metadatas"])):
         print(f"\n#{i+1}")
@@ -91,7 +91,7 @@ LOG_FILE = os.path.join(MEMORY_DIR, "log.jsonl")
 
 def log_event(summary, source_path, event_type="summary"):
     """
-    Log a memory event (summary, deletion, etc.) to disk and ChromaDB.
+    Log a memory event (summary, deletion, etc.) to disk and assistant ChromaDB.
     Standardizes event_type to "deletion" for deletions.
     """
     os.makedirs(MEMORY_DIR, exist_ok=True)
@@ -105,7 +105,7 @@ def log_event(summary, source_path, event_type="summary"):
     }
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
-    # Incremental update: add only this event to ChromaDB
+    # Incremental update: add only this event to assistant ChromaDB
     try:
         collection = get_chromadb_collection()
     except ImportError:
@@ -133,15 +133,15 @@ def save_file_state(state):
 # === Summarization ===
 def summarize_file(path):
     """Summarize the contents of a file using the LLM and log the summary."""
-    print(f"📄 Attempting to summarize: {path}")
+    print(f"📄 Assistant: Attempting to summarize: {path}")
     try:
         with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
     except PermissionError:
-        print(f"❌ Cannot access file (locked): {path}")
+        print(f"❌ Assistant: Cannot access file (locked): {path}")
         return
     if not content.strip():
-        print(f"⚠️ Skipping empty file: {path}")
+        print(f"⚠️ Assistant: Skipping empty file: {path}")
         return
     prompt = f"Summarize this:\n\n{content}"
     try:
@@ -151,7 +151,7 @@ def summarize_file(path):
             stream=True
         )
     except requests.exceptions.ConnectionError:
-        print("❌ Ollama is not running. Start it with: ollama run <model>")
+        print("❌ Assistant: Ollama is not running. Start it with: ollama run <model>")
         return
     summary = ""
     try:
@@ -161,44 +161,44 @@ def summarize_file(path):
                 if "response" in data:
                     summary += data["response"]
     except Exception as e:
-        print(f"⚠️ Failed to parse response: {e}")
+        print(f"⚠️ Assistant: Failed to parse response: {e}")
         return
     summary = summary.strip()
     if summary:
         log_event(summary, path)
-        print(f"✅ Summary complete: {summary[:80]}...")
+        print(f"✅ Assistant: Summary complete: {summary[:80]}...")
     else:
-        print("⚠️ LLM returned empty summary.")
+        print("⚠️ Assistant: LLM returned empty summary.")
 
 # === Digest ===
 def generate_digest(days=1):
-    """Generate a digest of recent memory entries and write to outputs/digest.txt."""
+    """Generate a digest of recent assistant memory entries and write to outputs/digest.txt."""
     log_path = os.path.join(MEMORY_DIR, "log.jsonl")
     if not os.path.exists(log_path):
-        print("❌ No memory log found.")
+        print("❌ Assistant: No memory log found.")
         return
     cutoff = datetime.utcnow() - timedelta(days=days)
     with open(log_path, "r", encoding="utf-8") as f:
         entries = [json.loads(line) for line in f]
     recent = [e for e in entries if datetime.fromisoformat(e["timestamp"]) > cutoff]
     if not recent:
-        print("⚠️ No recent memory entries.")
+        print("⚠️ Assistant: No recent memory entries.")
         return
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     digest_path = os.path.join(OUTPUT_DIR, "digest.txt")
     digest = "\n\n".join(f"[{e['timestamp']}] {e['summary']}" for e in recent)
     with open(digest_path, "w", encoding="utf-8") as f:
         f.write(digest)
-    print(f"✅ Digest written to {digest_path}")
+    print(f"✅ Assistant: Digest written to {digest_path}")
 
 # === Ask Engine ===
 def ask_question(question):
     """
-    Search memory for relevant entries and use the LLM to answer a question.
+    Search assistant memory for relevant entries and use the LLM to answer a question.
     Returns the LLM's answer as a string.
     """
     t0 = time.time()
-    print("[🔍] Searching memory...", flush=True)
+    print("[🔍] Assistant: Searching memory...", flush=True)
     matches = search_memory(
         question,
         top_k=10,
@@ -206,10 +206,10 @@ def ask_question(question):
     )
     t1 = time.time()
     if not matches:
-        print("[🗂️] No relevant memory entries found.")
-        return "❌ No relevant memory entries found."
+        print("[🗂️] Assistant: No relevant memory entries found.")
+        return "❌ Assistant: No relevant memory entries found."
 
-    print("\n[🗂️] Retrieved memory entries for LLM context:")
+    print("\n[🗂️] Assistant: Retrieved memory entries for LLM context:")
     for i, (summary, meta) in enumerate(matches, 1):
         print(f"{i}. [{meta.get('timestamp', meta.get('date', 'unknown'))}] ({meta.get('source', 'unknown')})\n   {summary}", flush=True)
 
@@ -229,7 +229,7 @@ def ask_question(question):
         "Your answer (be thorough and reference all entries above):"
     )
 
-    print(f"[🤖] Querying LLM ({LLM_MODEL})...", flush=True)
+    print(f"[🤖] Assistant: Querying LLM ({LLM_MODEL})...", flush=True)
     try:
         response = requests.post(
             OLLAMA_API,
@@ -238,8 +238,8 @@ def ask_question(question):
             timeout=30
         )
     except requests.exceptions.RequestException as e:
-        return f"❌ Could not connect to Ollama: {e}"
-    print("[💬] LLM response:", flush=True)
+        return f"❌ Assistant: Could not connect to Ollama: {e}"
+    print("[💬] Assistant: LLM response:", flush=True)
     sys.stdout.flush()
     chunks = []
     for line in response.iter_lines():
@@ -252,11 +252,11 @@ def ask_question(question):
                 print(chunk, end="", flush=True)
                 chunks.append(chunk)
         except Exception as e:
-            print(f"\n⚠️ Skipping invalid chunk: {e}", flush=True)
+            print(f"\n⚠️ Assistant: Skipping invalid chunk: {e}", flush=True)
     t2 = time.time()
-    print(f"\n[⏱️] Memory search: {t1-t0:.2f}s | LLM: {t2-t1:.2f}s | Total: {t2-t0:.2f}s", flush=True)
+    print(f"\n[⏱️] Assistant: Memory search: {t1-t0:.2f}s | LLM: {t2-t1:.2f}s | Total: {t2-t0:.2f}s", flush=True)
     answer = "".join(chunks).strip()
-    return answer if answer else "⚠️ No answer generated."
+    return answer if answer else "⚠️ Assistant: No answer generated."
 
 # === Workspace Watcher ===
 def is_valid_file_path(path):
@@ -268,7 +268,7 @@ def sync_workspace(path=WORKSPACE_DIR):
     Scan the workspace directory, summarize changed files, and update memory state.
     Also logs deletions.
     """
-    print("🔄 Syncing all modified files in workspace...")
+    print("🔄 Assistant: Syncing all modified files in workspace...")
     state = load_file_state()
     existing_paths = set()
     for root, _, files in os.walk(path):
@@ -280,7 +280,7 @@ def sync_workspace(path=WORKSPACE_DIR):
             existing_paths.add(rel_path)
     for key in list(state.keys()):
         if key not in existing_paths:
-            print(f"🗑️ Removing deleted file from state: {key}")
+            print(f"🗑️ Assistant: Removing deleted file from state: {key}")
             del state[key]
             log_event("File was deleted", key, event_type="deletion")
     for rel_path in existing_paths:
@@ -290,23 +290,23 @@ def sync_workspace(path=WORKSPACE_DIR):
         except FileNotFoundError:
             continue
         last_mtime = round(state.get(rel_path, 0), 6)
-        print(f"⏱️  {rel_path} | last: {last_mtime}, current: {current_mtime}")
+        print(f"⏱️  Assistant: {rel_path} | last: {last_mtime}, current: {current_mtime}")
         if current_mtime > last_mtime:
-            print(f"📄 Syncing updated file: {rel_path}")
+            print(f"📄 Assistant: Syncing updated file: {rel_path}")
             summarize_file(full_path)
             if is_valid_file_path(rel_path):
                 state[rel_path] = current_mtime
         else:
-            print(f"✅ Skipping unchanged file: {rel_path}")
+            print(f"✅ Assistant: Skipping unchanged file: {rel_path}")
     save_file_state(state)
-    print("✅ Sync complete.")
+    print("✅ Assistant: Sync complete.")
 
 class FileChangeHandler(FileSystemEventHandler):
     def on_modified(self, event):
         if event.is_directory or event.src_path.endswith(tuple(IGNORED_EXTENSIONS)):
             return
         rel_path = os.path.relpath(event.src_path, start=".").replace("\\", "/")
-        print(f"🔄 Detected change in: {rel_path}")
+        print(f"🔄 Assistant: Detected change in: {rel_path}")
         summarize_file(event.src_path)
         state = load_file_state()
         try:
@@ -321,22 +321,22 @@ class FileChangeHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         rel_path = os.path.relpath(event.src_path, start=".").replace("\\", "/")
-        print(f"❌ Detected deletion: {rel_path}")
+        print(f"❌ Assistant: Detected deletion: {rel_path}")
         state = load_file_state()
         if rel_path in state:
             del state[rel_path]
             save_file_state(state)
-            print(f"🗑️ Removed {rel_path} from last_seen.json")
+            print(f"🗑️ Assistant: Removed {rel_path} from last_seen.json")
             log_event("File was deleted", rel_path, event_type="deletion")
 
 def start_file_watcher():
-    """Start the workspace file watcher and sync on startup."""
+    """Start the assistant workspace file watcher and sync on startup."""
     os.makedirs(WORKSPACE_DIR, exist_ok=True)
     sync_workspace(WORKSPACE_DIR)
     observer = Observer()
     observer.schedule(FileChangeHandler(), path=WORKSPACE_DIR, recursive=True)
     observer.start()
-    print("✅ Watching workspace/ for changes...")
+    print("✅ Assistant: Watching workspace/ for changes...")
     try:
         while True:
             time.sleep(1)
@@ -346,22 +346,22 @@ def start_file_watcher():
 
 # === ChromaDB Cleanup ===
 def cleanup_chromadb(db_path="chromadb_store"):
-    """Delete the ChromaDB directory for a clean state."""
+    """Delete the assistant ChromaDB directory for a clean state."""
     if os.path.exists(db_path):
         import shutil
         shutil.rmtree(db_path)
-        print(f"ChromaDB at {db_path} cleaned up.")
+        print(f"Assistant ChromaDB at {db_path} cleaned up.")
     else:
-        print(f"No ChromaDB found at {db_path}.")
+        print(f"No assistant ChromaDB found at {db_path}.")
 
 def resync_chromadb_from_log():
     """
-    Delete ChromaDB and rebuild it from the log file.
+    Delete assistant ChromaDB and rebuild it from the log file.
     """
     cleanup_chromadb()
     log_path = os.path.join(MEMORY_DIR, "log.jsonl")
     if not os.path.exists(log_path):
-        print("No memory log found for resync.")
+        print("No assistant memory log found for resync.")
         return
     # Wait a moment to ensure file handles are released
     time.sleep(1)
@@ -374,4 +374,4 @@ def resync_chromadb_from_log():
                 "timestamp": entry["timestamp"],
                 "source": entry["source"]
             })
-    print("ChromaDB has been fully resynced from log.")
+    print("Assistant ChromaDB has been fully resynced from log.")
