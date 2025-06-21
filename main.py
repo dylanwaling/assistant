@@ -1,17 +1,19 @@
 ﻿# main.py
 # Entry point for the assistant CLI using Typer.
-# Exposes commands for watching the workspace, generating digests, asking questions, and cleaning up ChromaDB.
 
 import typer
 import time
+import subprocess
+import sys
+
 from core import (
-    start_file_watcher,    # Watches the workspace for file changes
-    generate_digest,       # Generates a digest of recent memory entries
-    ask_question,          # Asks the LLM a question using memory context
-    cleanup_chromadb       # Cleans up the ChromaDB directory
+    start_file_watcher,
+    generate_digest,
+    ask_question,
+    cleanup_chromadb,
+    resync_chromadb_from_log
 )
 
-# Create a Typer app for CLI commands
 app = typer.Typer()
 
 @app.command()
@@ -48,6 +50,17 @@ def cleanupdb():
     """Cleanup ChromaDB."""
     cleanup_chromadb()
 
+@app.command()
+def resyncdb():
+    """
+    Fully resync ChromaDB from the log and restart the batch file.
+    """
+    print("WARNING: This will close this terminal and restart the assistant after resync.")
+    # Launch the resync script in a new process and exit this one
+    subprocess.Popen([
+        sys.executable, "resync_chromadb.py"
+    ])
+    sys.exit(0)
+
 if __name__ == "__main__":
-    # Run the Typer CLI app if this file is executed directly
     app()

@@ -12,7 +12,6 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 # === Embedding ===
-# Provides vector embeddings for text using sentence-transformers.
 try:
     from sentence_transformers import SentenceTransformer
     _embed_model = SentenceTransformer("all-MiniLM-L6-v2")
@@ -23,14 +22,17 @@ except ImportError:
     def embed(text: str) -> list[float]:
         raise ImportError("sentence-transformers not installed")
 
-# === ChromaDB Memory Index ===
-# Handles persistent vector storage and retrieval.
-try:
-    import chromadb
-    _client = chromadb.PersistentClient(path="chromadb_store")
-    collection = _client.get_or_create_collection("memory")
-except ImportError:
-    collection = None
+# === ChromaDB Memory Index (Lazy Initialization) ===
+_chromadb_client = None
+_chromadb_collection = None
+
+def get_chromadb_collection():
+    global _chromadb_client, _chromadb_collection
+    if _chromadb_collection is None:
+        import chromadb
+        _chromadb_client = chromadb.PersistentClient(path="chromadb_store")
+        _chromadb_collection = _chromadb_client.get_or_create_collection("memory")
+    return _chromadb_collection
 
 from config import (
     WORKSPACE_DIR, MEMORY_DIR, OUTPUT_DIR,
@@ -39,7 +41,9 @@ from config import (
 
 def add_memory(id: str, text: str, metadata: dict = {}):
     """Add a memory entry to the ChromaDB vector store."""
-    if collection is None:
+    try:
+        collection = get_chromadb_collection()
+    except ImportError:
         print("ChromaDB not available.")
         return
     embedding = embed(text)
@@ -52,7 +56,9 @@ def add_memory(id: str, text: str, metadata: dict = {}):
 
 def search_memory(query: str, top_k=10, where: dict = None):
     """Search memory entries using a vector query and optional metadata filter."""
-    if collection is None:
+    try:
+        collection = get_chromadb_collection()
+    except ImportError:
         print("ChromaDB not available.")
         return []
     query_vector = embed(query)
@@ -65,7 +71,9 @@ def search_memory(query: str, top_k=10, where: dict = None):
 
 def list_all_memories():
     """Print all memory entries in the database."""
-    if collection is None:
+    try:
+        collection = get_chromadb_collection()
+    except ImportError:
         print("ChromaDB not available.")
         return
     results = collection.get()
@@ -87,7 +95,6 @@ def log_event(summary, source_path, event_type="summary"):
     Standardizes event_type to "deletion" for deletions.
     """
     os.makedirs(MEMORY_DIR, exist_ok=True)
-    # Standardize event_type for deletions
     if event_type.lower() in ("deleted", "deletion"):
         event_type = "deletion"
     entry = {
@@ -98,14 +105,17 @@ def log_event(summary, source_path, event_type="summary"):
     }
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
-    # Always add to ChromaDB
-    if collection is not None:
-        event_id = f"{entry['timestamp']}_{entry['source']}"
-        add_memory(event_id, summary, metadata={
-            "type": event_type,
-            "timestamp": entry["timestamp"],
-            "source": source_path
-        })
+    # Incremental update: add only this event to ChromaDB
+    try:
+        collection = get_chromadb_collection()
+    except ImportError:
+        return
+    event_id = f"{entry['timestamp']}_{entry['source']}"
+    add_memory(event_id, summary, metadata={
+        "type": event_type,
+        "timestamp": entry["timestamp"],
+        "source": source_path
+    })
 
 def load_file_state():
     """Load the last seen file modification times from disk."""
@@ -208,17 +218,16 @@ def ask_question(question):
         for i, (summary, meta) in enumerate(matches)
     )
 
-    # Universal, explicit prompt
     prompt = (
-    "You are an AI assistant. Below are memory log entries (context). "
-    "Answer the user's question using ONLY the information in the context. "
-    "Do not invent or assume any details that are not explicitly present. "
-    "Do not reference external sources or users unless they are in the context. "
-    "Do not skip any entry. Reference each entry as needed.\n\n"
-    f"{context}\n\n"
-    f"User's question: {question}\n"
-    "Your answer (be thorough and reference all entries above):"
-)
+        "You are an AI assistant. Below are memory log entries (context). "
+        "Answer the user's question using ONLY the information in the context. "
+        "Do not invent or assume any details that are not explicitly present. "
+        "Do not reference external sources or users unless they are in the context. "
+        "Do not skip any entry. Reference each entry as needed.\n\n"
+        f"{context}\n\n"
+        f"User's question: {question}\n"
+        "Your answer (be thorough and reference all entries above):"
+    )
 
     print(f"[🤖] Querying LLM ({LLM_MODEL})...", flush=True)
     try:
@@ -293,7 +302,6 @@ def sync_workspace(path=WORKSPACE_DIR):
     print("✅ Sync complete.")
 
 class FileChangeHandler(FileSystemEventHandler):
-    """Handles file system events for the workspace watcher."""
     def on_modified(self, event):
         if event.is_directory or event.src_path.endswith(tuple(IGNORED_EXTENSIONS)):
             return
@@ -308,6 +316,7 @@ class FileChangeHandler(FileSystemEventHandler):
                 save_file_state(state)
         except FileNotFoundError:
             pass
+
     def on_deleted(self, event):
         if event.is_directory:
             return
@@ -344,3 +353,25 @@ def cleanup_chromadb(db_path="chromadb_store"):
         print(f"ChromaDB at {db_path} cleaned up.")
     else:
         print(f"No ChromaDB found at {db_path}.")
+
+def resync_chromadb_from_log():
+    """
+    Delete ChromaDB and rebuild it from the log file.
+    """
+    cleanup_chromadb()
+    log_path = os.path.join(MEMORY_DIR, "log.jsonl")
+    if not os.path.exists(log_path):
+        print("No memory log found for resync.")
+        return
+    # Wait a moment to ensure file handles are released
+    time.sleep(1)
+    with open(log_path, "r", encoding="utf-8") as f:
+        for line in f:
+            entry = json.loads(line)
+            event_id = f"{entry['timestamp']}_{entry['source']}"
+            add_memory(event_id, entry["summary"], metadata={
+                "type": entry["type"],
+                "timestamp": entry["timestamp"],
+                "source": entry["source"]
+            })
+    print("ChromaDB has been fully resynced from log.")
